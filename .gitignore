@@ -3,4 +3,5 @@ project.sublime-workspace
 game_hot_reload.exe
 game_hot_reload.bin
 raylib.dll
+atlas_builder.exe
 linux/**
