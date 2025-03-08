@@ -7,17 +7,29 @@ import "core:slice"
 PIXEL_WINDOW_HEIGHT :: 180
 
 Vec2 :: [2]f32
+Rect :: rl.Rectangle
 
 House :: struct {
 	pos: Vec2,
 }
 
+Tree :: struct {
+	pos: Vec2,
+}
+
+Placement_Mode :: enum {
+	House,
+	Tree,
+}
+
 Game_Memory :: struct {
 	camera_pos: Vec2,
 	run: bool,
-	house_texture: rl.Texture,
+	atlas: rl.Texture,
 	houses: [dynamic]House,
+	trees: [dynamic]Tree,
 	mouse_world_pos: Vec2,
+	placement_mode: Placement_Mode,
 }
 
 g: ^Game_Memory
@@ -55,6 +67,13 @@ update :: proc() {
 		input.x += 1
 	}
 
+	if rl.IsKeyPressed(.ONE) {
+		g.placement_mode = .House
+	}
+	if rl.IsKeyPressed(.TWO) {
+		g.placement_mode = .Tree
+	}
+
 	input = linalg.normalize0(input)
 	g.camera_pos += input * rl.GetFrameTime() * 100
 
@@ -62,9 +81,17 @@ update :: proc() {
 	g.mouse_world_pos = rl.GetScreenToWorld2D(rl.GetMousePosition(), game_cam)
 
 	if rl.IsMouseButtonPressed(.LEFT) {
-		append(&g.houses, House {
-			pos = g.mouse_world_pos,
-		})
+		switch g.placement_mode {
+		case .House:
+			append(&g.houses, House {
+				pos = g.mouse_world_pos,
+			})
+		case .Tree:
+			append(&g.trees, Tree {
+				pos = g.mouse_world_pos,
+			})
+		}
+		
 	}
 }
 
@@ -81,26 +108,49 @@ draw :: proc() {
 	game_cam := game_camera()
 	rl.BeginMode2D(game_cam)
 
-	sorted_houses := make([]int, len(g.houses), context.temp_allocator)
-
-	for &s, idx in sorted_houses {
-		s = idx
+	Drawable :: struct {
+		texture: Texture_Name,
+		pos: Vec2,
 	}
 
-	sort_houses :: proc(i, j: int) -> bool {
-		a := g.houses[i]
-		b := g.houses[j]
-		return a.pos.y < b.pos.y
+	drawables := make([dynamic]Drawable, context.temp_allocator)
+
+	for &h in g.houses {
+		append(&drawables, Drawable {
+			texture = .House,
+			pos = h.pos,
+		})
 	}
 
-	slice.sort_by(sorted_houses, sort_houses)
-
-	for idx in sorted_houses {
-		h := &g.houses[idx]
-		rl.DrawTextureV(g.house_texture, h.pos, rl.WHITE)
+	for &t in g.trees {
+		append(&drawables, Drawable {
+			texture = .Tree,
+			pos = t.pos,
+		})
 	}
 
-	rl.DrawTextureV(g.house_texture, g.mouse_world_pos, rl.WHITE)
+	cursor_drawable := Drawable {
+		pos = g.mouse_world_pos,
+	}
+
+	switch g.placement_mode {
+	case .House:
+		cursor_drawable.texture = .House
+	case .Tree:
+		cursor_drawable.texture = .Tree
+	}
+
+	append(&drawables, cursor_drawable)
+
+	sort_drawbles :: proc(i, j: Drawable) -> bool {
+		return i.pos.y < j.pos.y
+	}
+
+	slice.sort_by(drawables[:], sort_drawbles)
+
+	for &d in drawables {
+		rl.DrawTextureRec(g.atlas, atlas_textures[d.texture].rect, d.pos, rl.WHITE)
+	}
 
 	rl.EndMode2D()
 
@@ -132,7 +182,7 @@ game_init :: proc() {
 
 	g^ = Game_Memory {
 		run = true,
-		house_texture = rl.LoadTexture("assets/house.png"),
+		atlas = rl.LoadTexture("assets/atlas.png"),
 	}
 
 	game_hot_reloaded(g)
@@ -152,6 +202,8 @@ game_should_run :: proc() -> bool {
 
 @(export)
 game_shutdown :: proc() {
+	delete(g.trees)
+	delete(g.houses)
 	free(g)
 }
 

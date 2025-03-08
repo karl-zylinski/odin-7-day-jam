@@ -1,5 +1,7 @@
 @echo off
 
+odin run source/atlas_builder
+
 set GAME_RUNNING=false
 
 :: OUT_DIR is for everything except the exe. The exe needs to stay in root
