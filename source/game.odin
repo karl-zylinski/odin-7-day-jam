@@ -27,6 +27,7 @@ Game_Memory :: struct {
 	atlas: rl.Texture,
 	entities: [dynamic]Entity,
 	mouse_world_pos: Vec2,
+	mouse_ui_pos: Vec2,
 	place_entity_type: Entity_Type,
 }
 
@@ -81,6 +82,16 @@ update :: proc() {
 
 	game_cam := game_camera()
 	g.mouse_world_pos = linalg.round(rl.GetScreenToWorld2D(rl.GetMousePosition(), game_cam))
+	g.mouse_ui_pos = rl.GetScreenToWorld2D(rl.GetMousePosition(), ui_camera())
+
+
+	screen_rect := fullscreen_rect()
+	game_rect, _ := split_rect_right(screen_rect, METRIC_SIDE_PANEL_WIDTH, 0)
+
+	// Rest of proc is for updating game state if inside the game rect
+	if !mouse_in_ui_rect(game_rect) {
+		return
+	}
 
 	for idx := 0; idx< len(g.entities); {
 		e := &g.entities[idx]
@@ -122,6 +133,10 @@ cursor_overlaps_entity :: proc() -> bool {
 
 mouse_in_rect :: proc(r: Rect) -> bool {
 	return rl.CheckCollisionPointRec(g.mouse_world_pos, r)
+}
+
+mouse_in_ui_rect :: proc(r: Rect) -> bool {
+	return rl.CheckCollisionPointRec(g.mouse_ui_pos, r)
 }
 
 cursor_pos :: proc() -> Vec2 {
@@ -189,7 +204,6 @@ draw :: proc() {
 	if g.debug_draw {
 		for &e in g.entities {
 			fpr := entity_footprint_rect(e.type, e.pos)
-
 			rl.DrawRectangleRec(fpr, {255, 0, 0, 100})
 		}
 
@@ -198,11 +212,55 @@ draw :: proc() {
 	}
 
 	rl.EndMode2D()
-	rl.BeginMode2D(ui_camera())
+	ui_cam := ui_camera()
+	rl.BeginMode2D(ui_cam)
+
+	{
+		screen_rect := fullscreen_rect()
+		side_panel := cut_rect_right(&screen_rect, METRIC_SIDE_PANEL_WIDTH, 0)
+		rl.DrawRectangleRec(side_panel, COLOR_SIDE_PANEL_BG)
+
+		pos := Vec2 { side_panel.x, side_panel.y }
+
+		for t in Entity_Type {
+			tex := texture_from_entity_type(t)
+			rect := atlas_textures[tex].rect
+			dest_rect := rect_from_pos_size(pos, rect_size(rect))
+
+			rl.DrawTexturePro(g.atlas, rect, dest_rect, {}, 0, rl.WHITE)
+
+			if rl.CheckCollisionPointRec(rl.GetScreenToWorld2D(rl.GetMousePosition(), ui_cam), dest_rect) {
+				rl.DrawRectangleLinesEx(dest_rect, 1, rl.RED)
+
+				if rl.IsMouseButtonPressed(.LEFT) {
+					g.place_entity_type = t
+				}
+			}
+
+			if g.place_entity_type == t {
+				rl.DrawRectangleLinesEx(dest_rect, 1, rl.GREEN)
+			}
+
+			pos.x += rect.width
+
+		}
+	}
 
 	rl.EndMode2D()
 	rl.EndDrawing()
 }
+
+fullscreen_rect :: proc() -> Rect {
+	zoom := f32(rl.GetScreenHeight()) / PIXEL_WINDOW_HEIGHT
+	return {
+		0, 0,
+		f32(rl.GetScreenWidth()) / zoom, f32(rl.GetScreenHeight()) / zoom,
+	}
+}
+
+METRIC_SIDE_PANEL_WIDTH :: 80
+
+COLOR_SIDE_PANEL_BG :: rl.Color { 100, 100, 100, 255 }
 
 entity_footprint_rect :: proc(t: Entity_Type, p: Vec2) -> Rect {
 	switch t {
@@ -307,10 +365,6 @@ game_memory_size :: proc() -> int {
 @(export)
 game_hot_reloaded :: proc(mem: rawptr) {
 	g = (^Game_Memory)(mem)
-
-	// Here you can also set your own global variables. A good idea is to make
-	// your global variables into pointers that point to something inside
-	// `g_mem`.
 }
 
 @(export)
@@ -323,8 +377,6 @@ game_force_restart :: proc() -> bool {
 	return rl.IsKeyPressed(.F6)
 }
 
-// In a web build, this is called when browser changes size. Remove the
-// `rl.SetWindowSize` call if you don't want a resizable game.
 game_parent_window_size_changed :: proc(w, h: int) {
 	rl.SetWindowSize(i32(w), i32(h))
 }
